@@ -178,7 +178,7 @@ public abstract class EC2Cloud extends Cloud {
         super(id);
         this.useInstanceProfileForCredentials = useInstanceProfileForCredentials;
         this.credentialsId = credentialsId;
-        this.privateKey = new EC2PrivateKey(privateKey);
+        this.privateKey = ( privateKey == null  || "".equals(privateKey.trim()) ) ? null : new EC2PrivateKey(privateKey);
 
         if (templates == null) {
             this.templates = Collections.emptyList();
@@ -758,7 +758,7 @@ public abstract class EC2Cloud extends Cloud {
                 AmazonEC2 ec2 = connect(credentialsProvider, ec2endpoint);
                 ec2.describeInstances();
 
-                if (privateKey == null)
+                /* if (privateKey == null)
                     return FormValidation.error("Private key is not specified. Click 'Generate Key' to generate one.");
 
                 if (privateKey.trim().length() > 0) {
@@ -768,7 +768,7 @@ public abstract class EC2Cloud extends Cloud {
                         return FormValidation
                                 .error("The EC2 key pair private key isn't registered to this EC2 region (fingerprint is "
                                         + pk.getFingerprint() + ")");
-                }
+                } */
 
                 return FormValidation.ok(Messages.EC2Cloud_Success());
             } catch (AmazonClientException e) {
@@ -779,7 +779,7 @@ public abstract class EC2Cloud extends Cloud {
 
         public FormValidation doGenerateKey(StaplerResponse rsp, URL ec2EndpointUrl, boolean useInstanceProfileForCredentials, String credentialsId)
                 throws IOException, ServletException {
-            try {
+            /* try {
                 AWSCredentialsProvider credentialsProvider = createCredentialsProvider(useInstanceProfileForCredentials, credentialsId);
                 AmazonEC2 ec2 = connect(credentialsProvider, ec2EndpointUrl);
                 List<KeyPairInfo> existingKeys = ec2.describeKeyPairs().getKeyPairs();
@@ -806,7 +806,8 @@ public abstract class EC2Cloud extends Cloud {
             } catch (AmazonClientException e) {
                 LOGGER.log(Level.WARNING, "Failed to check EC2 credential", e);
                 return FormValidation.error(e.getMessage());
-            }
+            } */
+	    return FormValidation.ok(Messages.EC2Cloud_Success());
         }
 
         public ListBoxModel doFillCredentialsIdItems() {
