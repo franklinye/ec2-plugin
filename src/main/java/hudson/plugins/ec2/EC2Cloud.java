@@ -779,7 +779,9 @@ public abstract class EC2Cloud extends Cloud {
 
         public FormValidation doGenerateKey(StaplerResponse rsp, URL ec2EndpointUrl, boolean useInstanceProfileForCredentials, String credentialsId)
                 throws IOException, ServletException {
-            /* try {
+            // Note: with the 'Generate Key' button removed, this method will not be called as of now.
+	    // TBD: add a form field for KeyPair name, so that user can use existing KeyPair or create one with this method
+	    try {
                 AWSCredentialsProvider credentialsProvider = createCredentialsProvider(useInstanceProfileForCredentials, credentialsId);
                 AmazonEC2 ec2 = connect(credentialsProvider, ec2EndpointUrl);
                 List<KeyPairInfo> existingKeys = ec2.describeKeyPairs().getKeyPairs();
@@ -806,8 +808,7 @@ public abstract class EC2Cloud extends Cloud {
             } catch (AmazonClientException e) {
                 LOGGER.log(Level.WARNING, "Failed to check EC2 credential", e);
                 return FormValidation.error(e.getMessage());
-            } */
-	    return FormValidation.ok(Messages.EC2Cloud_Success());
+            }
         }
 
         public ListBoxModel doFillCredentialsIdItems() {
