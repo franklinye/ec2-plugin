@@ -5,7 +5,7 @@ See [JENKINS-5853](https://issues.jenkins-ci.org/browse/JENKINS-5853) for more d
 
 ### Get Started
 
-1. Download [the .hpi file](#Download) and install it manually 
+1. Download [the .hpi file](ec2.hpi) and install it manually 
 
   ```install plugin
   a. In the Jenkins main page, navigate to Manage Jenkins -> Manage Plugins
@@ -40,5 +40,5 @@ See [JENKINS-5853](https://issues.jenkins-ci.org/browse/JENKINS-5853) for more d
 
 ### Download
 
-[Jenkins EC2 Plugin v1.40-SNAPSHOT](ec2-v1.40.hpi)
+[Jenkins EC2 Plugin v1.40-SNAPSHOT](ec2.hpi)
 
