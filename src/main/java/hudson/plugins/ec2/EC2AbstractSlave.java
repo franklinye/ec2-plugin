@@ -23,12 +23,10 @@
  */
 package hudson.plugins.ec2;
 
-import edu.umd.cs.findbugs.annotations.CheckForNull;
 import hudson.Util;
 import hudson.model.Computer;
 import hudson.model.Descriptor;
 import hudson.model.Descriptor.FormException;
-import hudson.model.Hudson;
 import hudson.model.Node;
 import hudson.model.Slave;
 import hudson.slaves.NodeProperty;
@@ -37,10 +35,12 @@ import hudson.slaves.RetentionStrategy;
 import hudson.util.ListBoxModel;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -59,11 +59,10 @@ import com.amazonaws.services.ec2.model.AvailabilityZone;
 import com.amazonaws.services.ec2.model.CreateTagsRequest;
 import com.amazonaws.services.ec2.model.DeleteTagsRequest;
 import com.amazonaws.services.ec2.model.DescribeAvailabilityZonesResult;
-import com.amazonaws.services.ec2.model.DescribeInstancesRequest;
 import com.amazonaws.services.ec2.model.Instance;
+import com.amazonaws.services.ec2.model.InstanceBlockDeviceMapping;
 import com.amazonaws.services.ec2.model.InstanceStateName;
 import com.amazonaws.services.ec2.model.InstanceType;
-import com.amazonaws.services.ec2.model.Reservation;
 import com.amazonaws.services.ec2.model.StopInstancesRequest;
 import com.amazonaws.services.ec2.model.Tag;
 import com.amazonaws.services.ec2.model.TerminateInstancesRequest;
@@ -97,6 +96,7 @@ public abstract class EC2AbstractSlave extends Slave {
     public List<EC2Tag> tags;
     public final String cloudName;
     public AMITypeData amiType;
+    private String instanceType;
 
     // Temporary stuff that is obtained live from EC2
     public transient String publicDNS;
@@ -112,7 +112,8 @@ public abstract class EC2AbstractSlave extends Slave {
      * The time (in milliseconds) after which we will always re-fetch externally changeable EC2 data when we are asked
      * for it
      */
-    protected static final long MIN_FETCH_TIME = 20 * 1000;
+    protected static final long MIN_FETCH_TIME = Long.getLong("hudson.plugins.ec2.EC2AbstractSlave.MIN_FETCH_TIME",
+            TimeUnit.SECONDS.toMillis(20));
 
     protected final int launchTimeout;
 
@@ -124,6 +125,8 @@ public abstract class EC2AbstractSlave extends Slave {
 
     public transient String slaveCommandPrefix;
 
+    public transient String slaveCommandSuffix;
+
     private transient long createdTime;
 
     public static final String TEST_ZONE = "testZone";
@@ -131,7 +134,12 @@ public abstract class EC2AbstractSlave extends Slave {
     public EC2AbstractSlave(String name, String instanceId, String description, String remoteFS, int numExecutors, Mode mode, String labelString, ComputerLauncher launcher, RetentionStrategy<EC2Computer> retentionStrategy, String initScript, String tmpDir, List<? extends NodeProperty<?>> nodeProperties, String remoteAdmin, String jvmopts, boolean stopOnTerminate, String idleTerminationMinutes, List<EC2Tag> tags, String cloudName, boolean usePrivateDnsName, boolean useDedicatedTenancy, int launchTimeout, AMITypeData amiType)
             throws FormException, IOException {
 
-        super(name, "", remoteFS, numExecutors, mode, labelString, launcher, retentionStrategy, nodeProperties);
+        super(name, remoteFS, launcher);
+        setNumExecutors(numExecutors);
+        setMode(mode);
+        setLabelString(labelString);
+        setRetentionStrategy(retentionStrategy);
+        setNodeProperties(nodeProperties);
 
         this.instanceId = instanceId;
         this.templateDescription = description;
@@ -148,6 +156,7 @@ public abstract class EC2AbstractSlave extends Slave {
         this.launchTimeout = launchTimeout;
         this.amiType = amiType;
         readResolve();
+        fetchLiveInstanceData(true);
     }
 
     @Override
@@ -162,7 +171,7 @@ public abstract class EC2AbstractSlave extends Slave {
         }
 
         if (amiType == null) {
-            amiType = new UnixData(rootCommandPrefix, slaveCommandPrefix, Integer.toString(sshPort));
+            amiType = new UnixData(rootCommandPrefix, slaveCommandPrefix, slaveCommandSuffix, Integer.toString(sshPort));
         }
 
         return this;
@@ -191,6 +200,8 @@ public abstract class EC2AbstractSlave extends Slave {
             return 4;
         case M4Large:
             return 4;
+        case M5Large:
+            return 4;
         case C1Medium:
             return 5;
         case M2Xlarge:
@@ -201,6 +212,8 @@ public abstract class EC2AbstractSlave extends Slave {
             return 7;
         case C5Large:
             return 7;
+        case C5dLarge:
+            return 7;
         case M1Xlarge:
             return 8;
         case M22xlarge:
@@ -209,11 +222,15 @@ public abstract class EC2AbstractSlave extends Slave {
             return 13;
         case M4Xlarge:
             return 13;
+        case M5Xlarge:
+            return 13;
         case C3Xlarge:
             return 14;
         case C4Xlarge:
             return 14;
         case C5Xlarge:
+            return 14;
+        case C5dXlarge:
             return 14;
         case C1Xlarge:
             return 20;
@@ -223,6 +240,8 @@ public abstract class EC2AbstractSlave extends Slave {
             return 26;
         case M42xlarge:
             return 26;
+        case M52xlarge:
+            return 26;
         case G22xlarge:
             return 26;
         case C32xlarge:
@@ -230,6 +249,8 @@ public abstract class EC2AbstractSlave extends Slave {
         case C42xlarge:
             return 28;
         case C52xlarge:
+            return 28;
+        case C5d2xlarge:
             return 28;
         case Cc14xlarge:
             return 33;
@@ -245,7 +266,11 @@ public abstract class EC2AbstractSlave extends Slave {
             return 55;
         case C54xlarge:
             return 55;
+        case C5d4xlarge:
+            return 55;
         case M44xlarge:
+            return 55;
+        case M54xlarge:
             return 55;
         case Cc28xlarge:
             return 88;
@@ -257,11 +282,19 @@ public abstract class EC2AbstractSlave extends Slave {
             return 108;
         case C59xlarge:
             return 108;
+        case C5d9xlarge:
+            return 108;
         case M410xlarge:
+            return 120;
+        case M512xlarge:
             return 120;
             // TODO: M416xlarge
         case C518xlarge:
             return 216;
+        case C5d18xlarge:
+            return 216;
+        case M524xlarge:
+            return 240;
             // We don't have a suggestion, but we don't want to fail completely
             // surely?
         default:
@@ -281,28 +314,16 @@ public abstract class EC2AbstractSlave extends Slave {
         return new EC2Computer(this);
     }
 
+    /**
+     * Returns view of AWS EC2 Instance.
+     *
+     * @param instanceId instance id.
+     * @param cloud cloud provider (EC2Cloud compatible).
+     * @return instance in EC2.
+     */
     public static Instance getInstance(String instanceId, EC2Cloud cloud) {
-        if (instanceId == null || instanceId == "" || cloud == null)
-            return null;
-
-        Instance i = null;
-        try {
-            DescribeInstancesRequest request = new DescribeInstancesRequest();
-            request.setInstanceIds(Collections.<String> singletonList(instanceId));
-            AmazonEC2 ec2 = cloud.connect();
-            List<Reservation> reservations = ec2.describeInstances(request).getReservations();
-            if (!reservations.isEmpty()) {
-                List<Instance> instances = reservations.get(0).getInstances();
-                if (!instances.isEmpty()) {
-                    i = instances.get(0);
-                }
-            }
-        } catch (AmazonClientException e) {
-            LOGGER.log(Level.WARNING, "Failed to fetch EC2 instance: " + instanceId, e);
-        }
-        return i;
+        return CloudHelper.getInstance(instanceId, cloud);
     }
-
     /**
      * Terminates the instance in EC2.
      */
@@ -317,7 +338,7 @@ public abstract class EC2AbstractSlave extends Slave {
             LOGGER.info("EC2 instance stop request sent for " + getInstanceId());
             toComputer().disconnect(null);
         } catch (AmazonClientException e) {
-            Instance i = getInstance(getInstanceId(), getCloud());
+            Instance i = CloudHelper.getInstance(getInstanceId(), getCloud());
             LOGGER.log(Level.WARNING, "Failed to stop EC2 instance: " + getInstanceId() + " info: "
                     + ((i != null) ? i : ""), e);
         }
@@ -387,6 +408,13 @@ public abstract class EC2AbstractSlave extends Slave {
         return commandPrefix + " ";
     }
 
+    String getSlaveCommandSuffix() {
+        String commandSuffix = amiType.isUnix() ? ((UnixData) amiType).getSlaveCommandSuffix() : "";
+        if (commandSuffix == null || commandSuffix.length() == 0)
+            return "";
+        return " " + commandSuffix;
+    }
+
     String getJvmopts() {
         return Util.fixNull(jvmopts);
     }
@@ -428,7 +456,7 @@ public abstract class EC2AbstractSlave extends Slave {
      * Much of the EC2 data is beyond our direct control, therefore we need to refresh it from time to time to ensure we
      * reflect the reality of the instances.
      */
-    protected void fetchLiveInstanceData(boolean force) throws AmazonClientException {
+    private void fetchLiveInstanceData(boolean force) throws AmazonClientException {
         /*
          * If we've grabbed the data recently, don't bother getting it again unless we are forced
          */
@@ -437,7 +465,7 @@ public abstract class EC2AbstractSlave extends Slave {
             return;
         }
 
-        if (getInstanceId() == null || getInstanceId() == "") {
+        if (getInstanceId() == null || getInstanceId().isEmpty()) {
             /*
              * The getInstanceId() implementation on EC2SpotSlave can return null if the spot request doesn't yet know
              * the instance id that it is starting. What happens is that null is passed to getInstanceId() which
@@ -448,7 +476,16 @@ public abstract class EC2AbstractSlave extends Slave {
             return;
         }
 
-        Instance i = getInstance(getInstanceId(), getCloud());
+        Instance i = null;
+        try {
+            i = CloudHelper.getInstanceWithRetry(getInstanceId(), getCloud());
+        } catch (InterruptedException e) {
+            // We'll just retry next time we test for idleness.
+            LOGGER.fine("InterruptedException while get " + getInstanceId()
+                    + " Exception: " + e);
+            return;
+        }
+
 
         lastFetchTime = now;
         lastFetchInstance = i;
@@ -458,10 +495,18 @@ public abstract class EC2AbstractSlave extends Slave {
         publicDNS = i.getPublicDnsName();
         privateDNS = i.getPrivateIpAddress();
         createdTime = i.getLaunchTime().getTime();
-        tags = new LinkedList<EC2Tag>();
+        instanceType = i.getInstanceType();
 
-        for (Tag t : i.getTags()) {
-            tags.add(new EC2Tag(t.getKey(), t.getValue()));
+
+        /*
+         * Only fetch tags from live instance if tags are set. This check is required to mitigate a race condition
+         * when fetchLiveInstanceData() is called before pushLiveInstancedata().
+         */
+        if(!i.getTags().isEmpty()) {
+            tags = new LinkedList<EC2Tag>();
+            for (Tag t : i.getTags()) {
+                tags.add(new EC2Tag(t.getKey(), t.getValue()));
+            }
         }
     }
 
@@ -469,7 +514,16 @@ public abstract class EC2AbstractSlave extends Slave {
      * Clears all existing tag data so that we can force the instance into a known state
      */
     protected void clearLiveInstancedata() throws AmazonClientException {
-        Instance inst = getInstance(getInstanceId(), getCloud());
+        Instance inst = null;
+        try {
+            inst = CloudHelper.getInstanceWithRetry(getInstanceId(), getCloud());
+        } catch (InterruptedException e) {
+            // We'll just retry next time we test for idleness.
+            LOGGER.fine("InterruptedException while get " + getInstanceId()
+                    + " Exception: " + e);
+            return;
+        }
+
 
         /* Now that we have our instance, we can clear the tags on it */
         if (!tags.isEmpty()) {
@@ -479,17 +533,27 @@ public abstract class EC2AbstractSlave extends Slave {
                 instTags.add(new Tag(t.getName(), t.getValue()));
             }
 
+            List<String> resources = getResourcesToTag(inst);
             DeleteTagsRequest tagRequest = new DeleteTagsRequest();
-            tagRequest.withResources(inst.getInstanceId()).setTags(instTags);
+            tagRequest.withResources(resources).setTags(instTags);
             getCloud().connect().deleteTags(tagRequest);
         }
     }
 
     /*
-     * Sets tags on an instance. This will not clear existing tag data, so call clearLiveInstancedata if needed
+     * Sets tags on an instance and on the volumes attached to it. This will not clear existing tag data, so call
+     * clearLiveInstancedata if needed
      */
     protected void pushLiveInstancedata() throws AmazonClientException {
-        Instance inst = getInstance(getInstanceId(), getCloud());
+        Instance inst = null;
+        try {
+            inst = CloudHelper.getInstanceWithRetry(getInstanceId(), getCloud());
+        } catch (InterruptedException e) {
+            // We'll just retry next time we test for idleness.
+            LOGGER.fine("InterruptedException while get " + getInstanceId()
+                    + " Exception: " + e);
+        }
+
 
         /* Now that we have our instance, we can set tags on it */
         if (inst != null && tags != null && !tags.isEmpty()) {
@@ -499,10 +563,23 @@ public abstract class EC2AbstractSlave extends Slave {
                 instTags.add(new Tag(t.getName(), t.getValue()));
             }
 
+            List<String> resources = getResourcesToTag(inst);
             CreateTagsRequest tagRequest = new CreateTagsRequest();
-            tagRequest.withResources(inst.getInstanceId()).setTags(instTags);
+            tagRequest.withResources(resources).setTags(instTags);
             getCloud().connect().createTags(tagRequest);
         }
+    }
+
+    /*
+     * Get resources to tag, that is the instance itself and the volumes attached to it.
+     */
+    private List<String> getResourcesToTag(Instance inst) {
+        List<String> resources = new ArrayList<>();
+        resources.add(inst.getInstanceId());
+        for(InstanceBlockDeviceMapping blockDeviceMapping : inst.getBlockDeviceMappings()) {
+            resources.add(blockDeviceMapping.getEbs().getVolumeId());
+        }
+        return resources;
     }
 
     public String getPublicDNS() {
@@ -513,6 +590,11 @@ public abstract class EC2AbstractSlave extends Slave {
     public String getPrivateDNS() {
         fetchLiveInstanceData(false);
         return privateDNS;
+    }
+
+    public String getInstanceType() {
+        fetchLiveInstanceData(false);
+        return instanceType;
     }
 
     public List<EC2Tag> getTags() {
@@ -575,13 +657,17 @@ public abstract class EC2AbstractSlave extends Slave {
             return false;
         }
 
-        public ListBoxModel doFillZoneItems(@QueryParameter boolean useInstanceProfileForCredentials, @QueryParameter String credentialsId, @QueryParameter String region) {
-            AWSCredentialsProvider credentialsProvider = EC2Cloud.createCredentialsProvider(useInstanceProfileForCredentials, credentialsId);
+        public ListBoxModel doFillZoneItems(@QueryParameter boolean useInstanceProfileForCredentials,
+                                            @QueryParameter String credentialsId,
+                                            @QueryParameter String region,
+                                            @QueryParameter String roleArn,
+                                            @QueryParameter String roleSessionName) {
+            AWSCredentialsProvider credentialsProvider = EC2Cloud.createCredentialsProvider(useInstanceProfileForCredentials, credentialsId, roleArn, roleSessionName, region);
             return fillZoneItems(credentialsProvider, region);
         }
 
         public List<Descriptor<AMITypeData>> getAMITypeDescriptors() {
-            return Jenkins.getInstance().<AMITypeData, Descriptor<AMITypeData>> getDescriptorList(AMITypeData.class);
+            return Jenkins.getInstance().getDescriptorList(AMITypeData.class);
         }
     }
 
