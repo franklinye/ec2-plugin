@@ -41,4 +41,5 @@ See [JENKINS-5853](https://issues.jenkins-ci.org/browse/JENKINS-5853) for more d
 ### Download
 
 [Jenkins EC2 Plugin v1.40-SNAPSHOT](downloads/ec2-v1.40.hpi)
+[Jenkins EC2 Plugin v1.42-SNAPSHOT](downloads/ec2-v1.42.hpi)
 
