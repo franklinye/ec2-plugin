@@ -538,8 +538,8 @@ public class SlaveTemplate implements Describable<SlaveTemplate> {
 
         KeyPair keyPair = getKeyPair(ec2);
         riRequest.setUserData(Base64.encodeBase64String(userData.getBytes(StandardCharsets.UTF_8)));
-        riRequest.setKeyName(keyPair.getKeyName());
-        diFilters.add(new Filter("key-name").withValues(keyPair.getKeyName()));
+        if ( keyPair != null ) riRequest.setKeyName(keyPair.getKeyName());
+        if ( keyPair != null ) diFilters.add(new Filter("key-name").withValues(keyPair.getKeyName()));
 
 
         if (StringUtils.isNotBlank(getZone())) {
